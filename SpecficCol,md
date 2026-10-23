@@ -1,0 +1,100 @@
+Yes! In fact, you should do this when your Oracle table has 100+ columns. You don't need to display all 100 columns to the user.
+
+The best approach is to let the backend retrieve the metadata, then let the frontend display only the columns you want to make available in the report builder.
+
+There are two ways to do this.
+
+## Option 1: Fetch all metadata, display only selected columns
+
+Oracle returns metadata for all 100+ columns, but the frontend displays only the columns you allow.
+
+For example, your table might contain:
+
+| Oracle column     | Display in report builder? |
+| ----------------- | -------------------------- |
+| PROJECT_ID        | Yes                        |
+| PROJECT_NAME      | Yes                        |
+| START_DATE        | Yes                        |
+| COST              | Yes                        |
+| INTERNAL_NOTES    | No                         |
+| CREATED_BY        | No                         |
+| UPDATED_TIMESTAMP | No                         |
+| ... 100+ columns  | ...                        |
+
+You can maintain a list of permitted column names in C#:
+
+```
+List<string> allowedColumns = new List<string>();
+
+allowedColumns.Add("PROJECT_ID");
+allowedColumns.Add("PROJECT_NAME");
+allowedColumns.Add("START_DATE");
+allowedColumns.Add("COST");
+allowedColumns.Add("CATEGORY");
+allowedColumns.Add("PLACE");
+allowedColumns.Add("STATUS");
+```
+
+Then, when reading Oracle metadata, only add columns present in this list:
+
+```
+while (reader.Read())
+{
+    string columnName = reader["COLUMN_NAME"].ToString();
+
+    if (allowedColumns.Contains(columnName))
+    {
+        // Create ColumnInfo and add it to the list.
+    }
+}
+```
+
+This is a simple approach, but you still retrieve metadata for all columns from Oracle.
+
+## Option 2: Ask Oracle for only the columns you allow
+
+I recommend this approach for your current report builder.
+
+You can filter the metadata query itself so Oracle returns only the columns you want.
+
+```
+string sql =
+    "SELECT COLUMN_NAME, DATA_TYPE " +
+    "FROM USER_TAB_COLUMNS " +
+    "WHERE TABLE_NAME = 'PROJECT_DETAILS' " +
+    "AND COLUMN_NAME IN (" +
+    "'PROJECT_ID', " +
+    "'PROJECT_NAME', " +
+    "'START_DATE', " +
+    "'COST', " +
+    "'CATEGORY', " +
+    "'PLACE', " +
+    "'STATUS') " +
+    "ORDER BY COLUMN_ID";
+```
+
+Now, even if the Oracle table has 150 columns, this query returns metadata for just those seven columns.
+
+Your existing code can continue processing the results using `OracleDataReader`, creating `ColumnInfo` objects, and returning them to the frontend.
+
+## How the complete flow works
+
+Oracle: `PROJECT_DETAILS`
+
+150 columns
+
+C# metadata query
+
+Returns only 7 approved columns
+
+AJAX response
+
+Only the approved column metadata is sent to JavaScript
+
+Attributes panel
+
+The user sees and selects from those 7 columns
+
+One important security detail: you must also validate selected columns inside `GenerateReport()`. Hiding a column from the frontend alone does not prevent someone from manually sending its name to your backend.
+
+For your current single-table setup, I would maintain an approved-column list in C#, use it for both `LoadReportMetadata()` and `GenerateReport()`, and keep the frontend completely dynamic. Later, when you add more tables, you can maintain a separate approved-column list for each table.
